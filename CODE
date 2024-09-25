@@ -125,3 +125,139 @@ print(gene_names)
 
 write.csv(dataDEGs, "AML_DEGs.csv")
 
+head(significant_genesnames.level)
+dim(significant_genesnames.level)
+
+# Load gplots package
+library(gplots)
+# Remove the first column if it contains gene names
+numeric_heat_data <- heat.data[, -1]  # Assuming the first column is gene names
+
+# Convert the numeric data to a matrix
+numeric_heat_data <- as.matrix(numeric_heat_data)
+
+# Check if the data is numeric
+str(numeric_heat_data)  # Ensure this only contains numeric data
+
+# Create the heatmap using heatmap.2
+
+heat.data<- filtData[rownames(significant_genesnames.level),]
+heatmap.2(x=matrix(# Remove the first column if it contains gene names
+  numeric_heat_data <- heat.data[, -1]  # Assuming the first column is gene names
+  
+  # Convert the numeric data to a matrix
+  numeric_heat_data <- as.matrix(numeric_heat_data)
+  
+  # Check if the data is numeric
+  str(numeric_heat_data)  # Ensure this only contains numeric data
+  
+ 
+  # Define cancer types and color codes
+  cancer.type <- c(rep("Recurrence", 20), rep("Primary", 20))
+  ccodes <- ifelse(cancer.type == "Recurrence", "red", "blue")
+  
+  # Create the heatmap with color-coded tumor types
+  heatmap.2(
+    x = numeric_heat_data,   # Numeric matrix of your data
+    col = hcl.colors(10, palette = 'Blue-Red 2'),
+    Rowv = FALSE, Colv = TRUE,
+    scale = 'row',
+    sepcolor = 'black',
+    trace = "none",
+    key = TRUE,
+    dendrogram = "col",
+    cexRow = 0.5, cexCol = 1,
+    main = 'Heatmap of Recurrence vs Primary',
+    na.color = 'black',
+    
+    # Add the color-coded strip for tumor types
+    ColSideColors = ccodes
+  )
+  
+ 
+  # Add a legend to explain what the colors represent
+  legend("topright", 
+         legend = c("Recurrence", "Primary"), 
+         fill = c("red", "blue"), 
+         title = "Tumor Type")
+ 
+   #view the volcano Plot
+  plot (x=significant_genesnames.level$logFC, y= -log10(significant_genesnames.level$FDR)) 
+  
+  upreg.genes <- rownames(subset(dataDEGs, logFC > 4))
+  dnreg.genes <- rownames(subset(dataDEGs, logFC < - 4))
+  
+  library(biomaRt)
+  # Install the necessary package if you haven't already
+  BiocManager::install("org.Hs.eg.db")
+  
+  # Load the library
+  library(org.Hs.eg.db)
+  
+  # Assuming you have a vector of Ensembl IDs
+  upreg.genes_ensembl_ids <- c("ENSG00000069011", "ENSG00000079102", "ENSG00000101938", "ENSG00000102287",
+                               "ENSG00000103241", "ENSG00000105976", "ENSG00000108691", "ENSG00000114948",
+                               "ENSG00000130675", "ENSG00000136244", "ENSG00000137801", "ENSG00000149948",
+                               "ENSG00000163735", "ENSG00000163792", "ENSG00000166450", "ENSG00000169439") 
+  # Convert Ensembl IDs to Gene Symbols
+  UPgene_symbols <- mapIds(org.Hs.eg.db,
+                         keys = upreg.genes_ensembl_ids,
+                         column = "SYMBOL",
+                         keytype = "ENSEMBL",
+                         multiVals = "first") 
+  # Check the output
+  print(UPgene_symbols)
+  # Extract just the gene names
+  UPgene_names <- as.character(UPgene_symbols)  # Convert to character vector
+  print(UPgene_names)
+  
+  # Assuming you have a vector of Ensembl IDs
+  dnreg.genes_ensembl_ids <- c("ENSG00000169851", "ENSG00000172987", "ENSG00000185008", "ENSG00000206384",
+                               "ENSG00000225972", "ENSG00000233098", "ENSG00000242985", "ENSG00000276107") 
+  # Convert Ensembl IDs to Gene Symbols
+  DNgene_symbols <- mapIds(org.Hs.eg.db,
+                         keys = dnreg.genes_ensembl_ids,
+                         column = "SYMBOL",
+                         keytype = "ENSEMBL",
+                         multiVals = "first")  
+  # Check the output
+  print(DNgene_symbols)
+  # Extract just the gene names
+  DNgene_names <- as.character(DNgene_symbols)  # Convert to character vector
+  print(DNgene_names)
+  
+  up.EA <- TCGAanalyze_EAcomplete(TFname = "Upregulated", UPgene_names)
+  # Filter out NA values and create a character vector of valid gene symbols
+  valid_DNgene_names <- na.omit(DNgene_names_df$Gene)
+  print(valid_DNgene_symbols)
+  # Re-run enrichment analysis with valid downregulated gene symbols
+  dn.EA <- TCGAanalyze_EAcomplete(TFname = "Downregulated", valid_DNgene_symbols)
+  
+  # Convert character vector to data frame
+  UPgene_names_df <- data.frame(Gene = UPgene_names, stringsAsFactors = FALSE)
+  DNgene_names_df <- data.frame(Gene = valid_DNgene_symbols, stringsAsFactors = FALSE)
+  
+  #Now we can visualize for results
+  TCGAvisualize_EAbarplot(tf= rownames(up.EA$ResBP),
+                          GOBPTab = up.EA$ResBP,
+                          GOCCTab = up.EA$ResCC,
+                          GOMFTab = up.EA$ResMF,
+                          PathTab = up.EA$ResPat,
+                          nRGTab =UPgene_names_df,
+                          nBar = 16,
+                          text.size = 2,
+                          fig.width = 30,
+                          fig.height = 15)
+  
+  
+  TCGAvisualize_EAbarplot(tf= rownames(dn.EA$ResBP),
+                          GOBPTab = dn.EA$ResBP,
+                          GOCCTab = dn.EA$ResCC,
+                          GOMFTab = dn.EA$ResMF,
+                          PathTab = dn.EA$ResPat,
+                          nRGTab =valid_DNgene_symbols,
+                          nBar = 8,
+                          text.size = 2,
+                          fig.width = 30,
+                          fig.height = 15)
+ 
