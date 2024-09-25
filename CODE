@@ -1,0 +1,127 @@
+library(readxl)
+# Load the data from the Excel file
+AML_Primary_Dataset <- read_excel("/cloud/project/gdc data/AML Primary Dataset.xlsx")
+
+AML_Recurrent_Dataset <- read_excel("/cloud/project/gdc data/AML Recurrent Dataset.xlsx")
+
+
+# Exclude the first column, assuming it contains non-numeric data like gene names
+AML_Primary_Dataset_numeric <- AML_Primary_Dataset[, -1]
+AML_Recurrent_Dataset_numeric <- AML_Recurrent_Dataset[, -1]
+# Pre-processing 1 - Adjusting NA values
+# Replace NA values with row means
+AML_Primary_Dataset_numeric[is.na(AML_Primary_Dataset_numeric)] <- rowMeans(AML_Primary_Dataset_numeric, na.rm = TRUE)
+AML_Recurrent_Dataset_numeric[is.na(AML_Recurrent_Dataset_numeric)] <- rowMeans(AML_Recurrent_Dataset_numeric, na.rm = TRUE)
+
+# Reattach the first (non-numeric) column after processing the numeric data
+AML_Primary_Dataset_clean <- cbind(AML_Primary_Dataset[, 1], AML_Primary_Dataset_numeric)
+colnames(AML_Primary_Dataset_clean)[1] <- colnames(AML_Primary_Dataset)[1]  # Preserve the column name
+
+AML_Recurrent_Dataset_clean <- cbind(AML_Recurrent_Dataset[, 1], AML_Recurrent_Dataset_numeric)
+colnames(AML_Recurrent_Dataset_clean)[1] <- colnames(AML_Recurrent_Dataset)[1]  # Preserve the column name
+
+# Check if the row names are identical
+identical(rownames(AML_Primary_Dataset_clean), rownames(AML_Recurrent_Dataset_clean))
+# Align rows based on common gene names
+common_genes <- intersect(rownames(AML_Primary_Dataset_clean), rownames(AML_Recurrent_Dataset_clean))
+
+# Subset both datasets to keep only the common genes
+AML_Primary_Dataset_clean <- AML_Primary_Dataset_clean[common_genes, ]
+AML_Recurrent_Dataset_clean <- AML_Recurrent_Dataset_clean[common_genes, ]
+
+# Combine the datasets by columns (samples)
+combined_dataset <- cbind(AML_Primary_Dataset_clean, AML_Recurrent_Dataset_clean)
+
+
+# Pre-processing 2 - Normalization using Trimmed mean of M values -> Adjusts differences in sample variation and sequencing depths
+#Data normalization 
+# Assuming combined_dataset is your data frame
+# Exclude the 22nd columns
+combined_dataset_clean <- combined_dataset[, -c(22)]
+count_data <- as.matrix(combined_dataset_clean[, -1])  # Exclude the first column
+dge <- DGEList(counts = count_data)
+dge <- calcNormFactors(dge)
+combined_dataset_counts <- cpm(dge, normalized.lib.sizes = TRUE)
+
+# Pre-processing 3 - Upper Quantile filter of genes -> Removes lowly expressed genes
+
+dataFilt <- TCGAanalyze_Filtering(
+  tabDF = data_filt,
+  method = "quantile",
+  qnt.cut =  0.75)
+
+# Optionally, set a proper column name for the first column
+colnames(data_filt)[1] <- "Gene"  # Change "Gene" to your preferred name
+
+# Check the final dataset
+head(data_filt)
+
+# Splitting the pre-processed data into primary and recurrent groups for DGE Analysis
+
+dge_Primary_TMM <- dataFilt[,1:20]  #dge_combined_TMM[,1:20]
+dge_Recurrent_TMM <- dataFilt[,21:40] #dge_combined_TMM[,21:40]
+
+# Differential Gene Expression Analysis using TCGAnalyze with extremely stringent cut-offs 
+
+dataDEGs <- TCGAanalyze_DEA(
+  mat1 = dge_Primary_TMM,
+  mat2 = dge_Recurrent_TMM,
+  Cond1type = "Primary",
+  Cond2type = "Recurrent",
+  fdr.cut = 0.0005,
+  logFC.cut = 4,
+  method = "glmLRT")
+
+# Example of selected serial numbers (replace with your actual serial numbers)
+selected_serials <- c(1064,1448, 2595, 2656, 2785, 3230, 3575, 4346, 6308, 7247, 7532, 9273, 11112,11127, 11858,
+                      12599, 12683, 13424, 15865, 20384,26399, 31250, 36588, 53662)
+                      
+# Extract the first column (gene names) from the original combined dataset
+gene_names <- combined_dataset[, 1]
+
+# Select the gene names corresponding to the selected serial numbers
+selected_gene_names <- gene_names[selected_serials]
+
+# Assuming the DGEA results are stored in a data frame or matrix called 'dge_results'
+# Replace 'dge_results' with your actual DGEA results object
+dge_results_with_genes <- data.frame(Gene = selected_gene_names, dataDEGs)
+
+# Select barcodes (adjust these indices according to your dataset)
+selectedBarcodes <- colnames(combined_dataset_clean)
+filtData <- combined_dataset_clean  # Assuming combined_matrix is your expression data
+
+# Expression values of significant differential expressed genes in primary and recurrent samples
+
+significant_genes.level <- TCGAanalyze_LevelTab(dge_results_with_genes,"Recurrent", "Primary",
+                                                filtData[, selectedBarcodes[2:21]],
+                                                filtData[, selectedBarcodes[22:41]])
+significant_genesnames.level <- data.frame(Gene = selected_gene_names, significant_genes.level)
+
+# Retrieving gene names
+library(AnnotationDbi)
+library(org.Hs.eg.db)
+# Remove version numbers
+gene_ids_cleaned <- sub("\\..*$", "", selected_gene_names)
+
+# Use the mapIds function to get gene names
+gene_names <- mapIds(org.Hs.eg.db, keys = gene_ids_cleaned, column = "GENENAME", keytype = "ENSEMBL", multiVals = "first")
+
+# Use the mapIds function to get the first gene name for each gene ID
+gene_names <- mapIds(org.Hs.eg.db, 
+                     keys = gene_ids_cleaned, 
+                     column = "GENENAME", 
+                     keytype = "ENSEMBL", 
+                     multiVals = "first")
+
+# View the resulting gene names
+head(gene_names)
+
+dataDEGs <- data.frame(gene_names, significant_genesnames.level)
+dataDEGs$gene_names = NULL
+dataDEGs$gene_type = NULL
+print(gene_names)
+
+# Exporting DGE analysis findings
+
+write.csv(dataDEGs, "AML_DEGs.csv")
+
